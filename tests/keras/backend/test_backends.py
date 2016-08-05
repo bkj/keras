@@ -38,6 +38,7 @@ def check_two_tensor_operation(function_name, x_input_shape,
     assert zth.shape == ztf.shape
     assert_allclose(zth, ztf, atol=1e-05)
 
+
 def check_composed_tensor_operations(first_function_name, first_function_args,
                                      second_function_name, second_function_args,
                                      input_shape):
@@ -57,7 +58,8 @@ def check_composed_tensor_operations(first_function_name, first_function_args,
     ztf = KTF.eval(getattr(KTF, second_function_name)(ytf, **second_function_args))
 
     assert zth.shape == ztf.shape
-    assert_allclose(zth, ztf, atol=1e-05)   
+    assert_allclose(zth, ztf, atol=1e-05)
+
 
 class TestBackend(object):
 
@@ -90,8 +92,8 @@ class TestBackend(object):
         check_single_tensor_operation('expand_dims', (4, 3), dim=-1)
         check_single_tensor_operation('expand_dims', (4, 3, 2), dim=1)
         check_single_tensor_operation('squeeze', (4, 3, 1), axis=2)
-        check_composed_tensor_operations('reshape', {'shape':(4,3,1,1)}, 
-                                         'squeeze', {'axis':2}, 
+        check_composed_tensor_operations('reshape', {'shape':(4,3,1,1)},
+                                         'squeeze', {'axis':2},
                                          (4, 3, 1, 1))
 
     def test_repeat_elements(self):
@@ -149,6 +151,12 @@ class TestBackend(object):
         # count_params
         assert KTH.count_params(xth) == KTF.count_params(xtf)
 
+        # print_tensor
+        check_single_tensor_operation('print_tensor', ())
+        check_single_tensor_operation('print_tensor', (2,))
+        check_single_tensor_operation('print_tensor', (4, 3))
+        check_single_tensor_operation('print_tensor', (1, 2, 3))
+
     def test_elementwise_operations(self):
         check_single_tensor_operation('max', (4, 2))
         check_single_tensor_operation('max', (4, 2), axis=1, keepdims=True)
@@ -196,6 +204,11 @@ class TestBackend(object):
 
         # two-tensor ops
         check_two_tensor_operation('equal', (4, 2), (4, 2))
+        check_two_tensor_operation('not_equal', (4, 2), (4, 2))
+        check_two_tensor_operation('greater', (4, 2), (4, 2))
+        check_two_tensor_operation('greater_equal', (4, 2), (4, 2))
+        check_two_tensor_operation('lesser', (4, 2), (4, 2))
+        check_two_tensor_operation('lesser_equal', (4, 2), (4, 2))
         check_two_tensor_operation('maximum', (4, 2), (4, 2))
         check_two_tensor_operation('minimum', (4, 2), (4, 2))
 
@@ -208,14 +221,24 @@ class TestBackend(object):
         exptf = xtf * KTF.exp(xtf)
         lossth = KTH.sum(expth)
         losstf = KTF.sum(exptf)
+        zero_lossth = KTH.stop_gradient(lossth)
+        zero_losstf = KTF.stop_gradient(losstf)
 
         gradth = KTH.gradients(lossth, [expth])
         gradtf = KTF.gradients(losstf, [exptf])
+        zero_gradth = KTH.gradients(lossth + zero_lossth, [expth])
+        zero_gradtf = KTF.gradients(losstf + zero_losstf, [exptf])
 
         zth = KTH.eval(gradth[0])
         ztf = KTF.eval(gradtf[0])
+        zero_zth = KTH.eval(zero_gradth[0])
+        zero_ztf = KTF.eval(zero_gradtf[0])
         assert zth.shape == ztf.shape
+        assert zero_zth.shape == zero_ztf.shape
         assert_allclose(zth, ztf, atol=1e-05)
+        assert_allclose(zero_zth, zero_ztf, atol=1e-05)
+        assert_allclose(zero_zth, zth, atol=1e-05)
+        assert_allclose(zero_ztf, ztf, atol=1e-05)
 
     def test_function(self):
         val = np.random.random((4, 2))
@@ -556,6 +579,16 @@ class TestBackend(object):
         assert(np.abs(np.mean(rand) - p) < 0.01)
         assert(np.max(rand) == 1)
         assert(np.min(rand) == 0)
+
+    def test_one_hot(self):
+        input_length = 10
+        nb_classes = 20
+        batch_size = 30
+        indices = np.random.randint(0, nb_classes, size=(batch_size, input_length))
+        oh = np.eye(nb_classes)[indices]
+        for K in [KTH, KTF]:
+            koh = K.eval(K.one_hot(K.variable(indices, dtype='int32'), nb_classes))
+            assert np.all(koh == oh)
 
 
 if __name__ == '__main__':

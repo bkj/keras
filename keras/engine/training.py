@@ -418,7 +418,6 @@ def generator_queue(generator, max_q_size=10,
         _stop = threading.Event()
 
     try:
-
         def data_generator_task():
             while not _stop.is_set():
                 try:
@@ -444,7 +443,6 @@ def generator_queue(generator, max_q_size=10,
             generator_threads.append(thread)
             thread.daemon = True
             thread.start()
-
     except:
         _stop.set()
         if pickle_safe:
@@ -510,7 +508,7 @@ class Model(Container):
                                 'it should have one entry per model outputs. '
                                 'The model has ' + str(len(self.outputs)) +
                                 ' outputs, but you passed loss_weights=' +
-                                str(loss))
+                                str(loss_weights))
             loss_weights_list = loss_weights
         else:
             raise Exception('Could not interpret loss_weights argument: ' +
@@ -610,8 +608,9 @@ class Model(Container):
             self.targets.append(K.placeholder(ndim=len(shape), name=name + '_target'))
 
         # prepare metrics
+        self.metrics = metrics
         self.metrics_names = ['loss']
-        self.metrics = []
+        self.metrics_tensors = []
 
         # compute total loss
         total_loss = None
@@ -625,7 +624,7 @@ class Model(Container):
             output_loss = weighted_loss(y_true, y_pred,
                                         sample_weight, mask)
             if len(self.outputs) > 1:
-                self.metrics.append(output_loss)
+                self.metrics_tensors.append(output_loss)
                 self.metrics_names.append(self.output_names[i] + '_loss')
             if total_loss is None:
                 total_loss = loss_weight * output_loss
@@ -650,21 +649,21 @@ class Model(Container):
                     output_shape = self.internal_output_shapes[i]
                     if output_shape[-1] == 1 or self.loss_functions[i] == objectives.binary_crossentropy:
                         # case: binary accuracy
-                        self.metrics.append(metrics_module.binary_accuracy(y_true, y_pred))
+                        self.metrics_tensors.append(metrics_module.binary_accuracy(y_true, y_pred))
                     elif self.loss_functions[i] == objectives.sparse_categorical_crossentropy:
                         # case: categorical accuracy with sparse targets
-                        self.metrics.append(
+                        self.metrics_tensors.append(
                             metrics_module.sparse_categorical_accuracy(y_true, y_pred))
                     else:
                         # case: categorical accuracy with dense targets
-                        self.metrics.append(metrics_module.categorical_accuracy(y_true, y_pred))
+                        self.metrics_tensors.append(metrics_module.categorical_accuracy(y_true, y_pred))
                     if len(self.output_names) == 1:
                         self.metrics_names.append('acc')
                     else:
                         self.metrics_names.append(self.output_layers[i].name + '_acc')
                 else:
                     metric_fn = metrics_module.get(metric)
-                    self.metrics.append(metric_fn(y_true, y_pred))
+                    self.metrics_tensors.append(metric_fn(y_true, y_pred))
                     if len(self.output_names) == 1:
                         self.metrics_names.append(metric_fn.__name__)
                     else:
@@ -688,7 +687,7 @@ class Model(Container):
         if not hasattr(self, 'train_function'):
             raise Exception('You must compile your model before using it.')
         if self.train_function is None:
-            if self.uses_learning_phase:
+            if self.uses_learning_phase and type(K.learning_phase()) is not int:
                 inputs = self.inputs + self.targets + self.sample_weights + [K.learning_phase()]
             else:
                 inputs = self.inputs + self.targets + self.sample_weights
@@ -700,7 +699,7 @@ class Model(Container):
 
             # returns loss and metrics. Updates weights at each call.
             self.train_function = K.function(inputs,
-                                             [self.total_loss] + self.metrics,
+                                             [self.total_loss] + self.metrics_tensors,
                                              updates=updates,
                                              **self._function_kwargs)
 
@@ -708,14 +707,14 @@ class Model(Container):
         if not hasattr(self, 'test_function'):
             raise Exception('You must compile your model before using it.')
         if self.test_function is None:
-            if self.uses_learning_phase:
+            if self.uses_learning_phase and type(K.learning_phase()) is not int:
                 inputs = self.inputs + self.targets + self.sample_weights + [K.learning_phase()]
             else:
                 inputs = self.inputs + self.targets + self.sample_weights
             # return loss and metrics, no gradient updates.
             # Does update the network states.
             self.test_function = K.function(inputs,
-                                            [self.total_loss] + self.metrics,
+                                            [self.total_loss] + self.metrics_tensors,
                                             updates=self.state_updates,
                                             **self._function_kwargs)
 
@@ -723,7 +722,7 @@ class Model(Container):
         if not hasattr(self, 'predict_function'):
             self.predict_function = None
         if self.predict_function is None:
-            if self.uses_learning_phase:
+            if self.uses_learning_phase and type(K.learning_phase()) is not int:
                 inputs = self.inputs + [K.learning_phase()]
             else:
                 inputs = self.inputs
@@ -1050,7 +1049,7 @@ class Model(Container):
                                                                            batch_size=batch_size)
             self._make_test_function()
             val_f = self.test_function
-            if self.uses_learning_phase:
+            if self.uses_learning_phase and type(K.learning_phase()) is not int:
                 val_ins = val_x + val_y + val_sample_weights + [0.]
             else:
                 val_ins = val_x + val_y + val_sample_weights
@@ -1064,7 +1063,7 @@ class Model(Container):
                 slice_X(sample_weights, 0, split_at), slice_X(sample_weights, split_at))
             self._make_test_function()
             val_f = self.test_function
-            if self.uses_learning_phase:
+            if self.uses_learning_phase and type(K.learning_phase()) is not int:
                 val_ins = val_x + val_y + val_sample_weights + [0.]
             else:
                 val_ins = val_x + val_y + val_sample_weights
@@ -1074,7 +1073,7 @@ class Model(Container):
             val_ins = None
 
         # prepare input arrays and training function
-        if self.uses_learning_phase:
+        if self.uses_learning_phase and type(K.learning_phase()) is not int:
             ins = x + y + sample_weights + [1.]
         else:
             ins = x + y + sample_weights
@@ -1134,7 +1133,7 @@ class Model(Container):
                                                            check_batch_dim=False,
                                                            batch_size=batch_size)
         # prepare inputs, delegate logic to _test_loop
-        if self.uses_learning_phase:
+        if self.uses_learning_phase and type(K.learning_phase()) is not int:
             ins = x + y + sample_weights + [0.]
         else:
             ins = x + y + sample_weights
@@ -1171,7 +1170,7 @@ class Model(Container):
                                 'Batch size: ' + str(batch_size) + '.')
 
         # prepare inputs, delegate logic to _predict_loop
-        if self.uses_learning_phase:
+        if self.uses_learning_phase and type(K.learning_phase()) is not int:
             ins = x + [0.]
         else:
             ins = x
@@ -1215,7 +1214,7 @@ class Model(Container):
                                                            sample_weight=sample_weight,
                                                            class_weight=class_weight,
                                                            check_batch_dim=True)
-        if self.uses_learning_phase:
+        if self.uses_learning_phase and type(K.learning_phase()) is not int:
             ins = x + y + sample_weights + [1.]
         else:
             ins = x + y + sample_weights
@@ -1253,7 +1252,7 @@ class Model(Container):
         x, y, sample_weights = self._standardize_user_data(x, y,
                                                            sample_weight=sample_weight,
                                                            check_batch_dim=True)
-        if self.uses_learning_phase:
+        if self.uses_learning_phase and type(K.learning_phase()) is not int:
             ins = x + y + sample_weights + [0.]
         else:
             ins = x + y + sample_weights
@@ -1268,7 +1267,7 @@ class Model(Container):
         '''
         x = standardize_input_data(x, self.input_names,
                                    self.internal_input_shapes)
-        if self.uses_learning_phase:
+        if self.uses_learning_phase and type(K.learning_phase()) is not int:
             ins = x + [0.]
         else:
             ins = x

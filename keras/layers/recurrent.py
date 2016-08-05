@@ -139,7 +139,10 @@ class Recurrent(Layer):
         To enable statefulness:
             - specify `stateful=True` in the layer constructor.
             - specify a fixed batch size for your model, by passing
-                a `batch_input_shape=(...)` to the first layer in your model.
+                if sequential model:
+                  a `batch_input_shape=(...)` to the first layer in your model.
+                else for functional model with 1 or more Input layers:
+                  a `batch_shape=(...)` to all the first layers in your model.
                 This is the expected shape of your inputs *including the batch size*.
                 It should be a tuple of integers, e.g. `(32, 10, 100)`.
 
@@ -689,7 +692,7 @@ class LSTM(Recurrent):
                                      name='{}_U'.format(self.name))
 
             self.b = K.variable(np.hstack((np.zeros(self.output_dim),
-                                           K.get_value(self.forget_bias_init(self.output_dim)),
+                                           K.get_value(self.forget_bias_init((self.output_dim,))),
                                            np.zeros(self.output_dim),
                                            np.zeros(self.output_dim))),
                                 name='{}_b'.format(self.name))
