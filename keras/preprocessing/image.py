@@ -5,6 +5,7 @@ new preprocessing methods, etc...
 from __future__ import absolute_import
 from __future__ import print_function
 
+import sys
 import numpy as np
 import re
 from scipy import linalg
@@ -444,6 +445,7 @@ class Iterator(object):
                 current_batch_size = N - current_index
                 self.batch_index = 0
             self.total_batches_seen += 1
+            print >> sys.stderr, current_index
             yield (index_array[current_index: current_index + current_batch_size],
                    current_index, current_batch_size)
 
